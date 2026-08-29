@@ -1,0 +1,846 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+<title>Pixel Pop Photo Reveal</title>
+
+<style>
+
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+}
+
+html,
+body {
+    width: 100%;
+    height: 100%;
+    overflow: hidden;
+    background: #000;
+}
+
+canvas {
+    position: fixed;
+    inset: 0;
+
+    width: 100%;
+    height: 100%;
+
+    display: block;
+}
+
+#finalImage {
+    position: fixed;
+
+    inset: 0;
+
+    width: 100vw;
+    height: 100vh;
+
+    object-fit: cover;
+
+    image-rendering: auto;
+
+    opacity: 0;
+
+    pointer-events: none;
+
+    transition: opacity 1s ease;
+}
+
+</style>
+</head>
+
+
+<body>
+
+<canvas id="canvas"></canvas>
+
+<!-- YOUR PHOTO -->
+<img
+    id="finalImage"
+    src="myphoto.jpg"
+>
+
+
+<script>
+
+
+
+
+
+/*
+    YOUR PHOTO
+*/
+
+const IMAGE_NAME =
+    "myphoto.jpg";
+
+
+
+const REVEAL_TIME =
+    6000;
+
+
+
+const PARTICLE_STEP =
+    2;
+
+
+/*
+    PIXEL SIZE
+*/
+
+const PARTICLE_SIZE =
+    3;
+
+
+/*
+    HD / 8K-grade render scale.
+    8K = 7680px across.
+*/
+
+const RENDER_SCALE =
+    8;
+
+
+
+const POP_DURATION =
+    350;
+
+
+/*
+    Maximum brightness boost.
+*/
+
+const BRIGHTNESS =
+    1.22;
+
+
+
+
+const canvas =
+    document.getElementById(
+        "canvas"
+    );
+
+const ctx =
+    canvas.getContext(
+        "2d"
+    );
+
+const finalImage =
+    document.getElementById(
+        "finalImage"
+    );
+
+const image =
+    new Image();
+
+
+
+let width = 0;
+let height = 0;
+
+let imageWidth = 0;
+let imageHeight = 0;
+
+let imageX = 0;
+let imageY = 0;
+
+let particles = [];
+
+let animationStart = 0;
+
+
+
+
+function resize() {
+
+    width =
+        window.innerWidth;
+
+    height =
+        window.innerHeight;
+
+
+    /*
+        Cap canvas at 8K width so
+        it never overflows memory.
+    */
+
+    const scale =
+        Math.max(
+            1,
+            Math.min(
+                RENDER_SCALE,
+                Math.floor(
+                    7680 / width
+                )
+            )
+        );
+
+
+    canvas.width =
+        width * scale;
+
+    canvas.height =
+        height * scale;
+
+
+    /*
+        Draw in CSS pixels on a
+        high-resolution backing store.
+    */
+
+    ctx.setTransform(
+        scale,
+        0,
+        0,
+        scale,
+        0,
+        0
+    );
+
+    ctx.imageSmoothingEnabled =
+        true;
+
+}
+
+window.addEventListener(
+    "resize",
+    resize
+);
+
+resize();
+
+
+
+
+image.onload =
+    function () {
+
+        calculateImage();
+
+        createParticles();
+
+        setTimeout(
+            startAnimation,
+            300
+        );
+
+    };
+
+
+image.onerror =
+    function () {
+
+        document.body.innerHTML = `
+
+            <div style="
+                color:white;
+                font-family:Arial;
+                text-align:center;
+                padding:50px;
+            ">
+
+                <h2>
+                    Image not found
+                </h2>
+
+                <p>
+                    Put this image in the
+                    same folder as index.html:
+                </p>
+
+                <strong>
+                    ${IMAGE_NAME}
+                </strong>
+
+            </div>
+
+        `;
+
+    };
+
+
+image.src =
+    IMAGE_NAME;
+
+
+
+
+function calculateImage() {
+
+    const originalWidth =
+        image.naturalWidth;
+
+    const originalHeight =
+        image.naturalHeight;
+
+
+
+
+    const scale =
+        Math.max(
+
+            width /
+                originalWidth,
+
+            height /
+                originalHeight
+
+        );
+
+
+    imageWidth =
+        Math.ceil(
+            originalWidth * scale
+        );
+
+
+    imageHeight =
+        Math.ceil(
+            originalHeight * scale
+        );
+
+
+    /*
+        Center image.
+    */
+
+    imageX =
+        Math.floor(
+            (width - imageWidth) / 2
+        );
+
+
+    imageY =
+        Math.floor(
+            (height - imageHeight) / 2
+        );
+
+
+    /*
+        Final image uses the same
+        full-screen dimensions.
+    */
+
+    finalImage.style.width =
+        imageWidth + "px";
+
+    finalImage.style.height =
+        imageHeight + "px";
+
+    finalImage.style.left =
+        imageX + "px";
+
+    finalImage.style.top =
+        imageY + "px";
+
+}
+
+
+
+
+function createParticles() {
+
+    particles = [];
+
+
+    /*
+        Temporary canvas.
+    */
+
+    const tempCanvas =
+        document.createElement(
+            "canvas"
+        );
+
+    const tempCtx =
+        tempCanvas.getContext(
+            "2d"
+        );
+
+
+    const naturalWidth =
+        image.naturalWidth;
+
+    const naturalHeight =
+        image.naturalHeight;
+
+
+    /*
+        Sample at the full original
+        resolution for maximum detail.
+    */
+
+    tempCanvas.width =
+        naturalWidth;
+
+    tempCanvas.height =
+        naturalHeight;
+
+
+
+
+    tempCtx.drawImage(
+
+        image,
+
+        0,
+        0
+
+    );
+
+
+    /*
+        Map original pixels onto
+        the displayed image size.
+    */
+
+    const scaleX =
+        imageWidth /
+        naturalWidth;
+
+    const scaleY =
+        imageHeight /
+        naturalHeight;
+
+
+    /*
+        Read pixels.
+    */
+
+    const imageData =
+        tempCtx.getImageData(
+
+            0,
+            0,
+
+            naturalWidth,
+            naturalHeight
+
+        );
+
+
+
+    for (
+
+        let y = 0;
+
+        y < naturalHeight;
+
+        y += PARTICLE_STEP
+
+    ) {
+
+
+        for (
+
+            let x = 0;
+
+            x < naturalWidth;
+
+            x += PARTICLE_STEP
+
+        ) {
+
+
+            const index =
+                (
+                    y *
+                    naturalWidth +
+                    x
+                ) * 4;
+
+
+            let r =
+                imageData.data[
+                    index
+                ];
+
+
+            let g =
+                imageData.data[
+                    index + 1
+                ];
+
+
+            let b =
+                imageData.data[
+                    index + 2
+                ];
+
+
+            const a =
+                imageData.data[
+                    index + 3
+                ];
+
+
+            /*
+                Ignore transparent pixels.
+            */
+
+            if (a < 80) {
+
+                continue;
+
+            }
+
+
+
+            r =
+                Math.min(
+                    255,
+                    r * BRIGHTNESS
+                );
+
+            g =
+                Math.min(
+                    255,
+                    g * BRIGHTNESS
+                );
+
+            b =
+                Math.min(
+                    255,
+                    b * BRIGHTNESS
+                );
+
+
+
+            const targetX =
+                imageX +
+                x * scaleX;
+
+            const targetY =
+                imageY +
+                y * scaleY;
+
+
+
+
+            const delay =
+                Math.random() *
+                (
+                    REVEAL_TIME -
+                    POP_DURATION
+                );
+
+
+            particles.push({
+
+                x:
+                    targetX,
+
+                y:
+                    targetY,
+
+
+                r:
+                    r,
+
+                g:
+                    g,
+
+                b:
+                    b,
+
+
+                size:
+                    PARTICLE_SIZE,
+
+
+                delay:
+                    delay
+
+            });
+
+        }
+
+    }
+
+}
+
+
+
+function easeOutBack(t) {
+
+    const c1 =
+        1.70158;
+
+    const c3 =
+        c1 + 1;
+
+    return (
+        1 +
+        c3 *
+        Math.pow(
+            t - 1,
+            3
+        ) +
+        c1 *
+        Math.pow(
+            t - 1,
+            2
+        )
+    );
+
+}
+
+
+
+
+function startAnimation() {
+
+    animationStart =
+        performance.now();
+
+    requestAnimationFrame(
+        animate
+    );
+
+}
+
+
+
+function animate(timestamp) {
+
+    const elapsed =
+        timestamp -
+        animationStart;
+
+
+    /*
+        Clear screen.
+    */
+
+    ctx.clearRect(
+
+        0,
+        0,
+
+        width,
+        height
+
+    );
+
+
+
+
+    for (
+
+        let i = 0;
+
+        i < particles.length;
+
+        i++
+
+    ) {
+
+
+        const p =
+            particles[i];
+
+
+        /*
+            How long this pixel
+            has been appearing.
+        */
+
+        const localTime =
+            elapsed -
+            p.delay;
+
+
+
+
+        if (
+            localTime <= 0
+        ) {
+
+            continue;
+
+        }
+
+
+
+        let progress =
+            localTime /
+            POP_DURATION;
+
+
+        progress =
+            Math.max(
+                0,
+                Math.min(
+                    1,
+                    progress
+                )
+            );
+
+
+
+
+        const pop =
+            easeOutBack(
+                progress
+            );
+
+
+        const size =
+            Math.max(
+                0,
+                p.size * pop
+            );
+
+
+
+
+        ctx.fillStyle =
+            `rgb(
+                ${Math.round(p.r)},
+                ${Math.round(p.g)},
+                ${Math.round(p.b)}
+            )`;
+
+
+        ctx.fillRect(
+
+            p.x -
+            size / 2,
+
+            p.y -
+            size / 2,
+
+            size,
+
+            size
+        );
+
+    }
+
+
+
+
+    if (
+
+        elapsed <
+        REVEAL_TIME +
+        POP_DURATION
+
+    ) {
+
+        requestAnimationFrame(
+            animate
+        );
+
+    }
+
+    else {
+
+        finishReveal();
+
+    }
+
+}
+
+
+
+
+function finishReveal() {
+
+    /*
+        Draw every pixel at its
+        exact original position.
+    */
+
+    ctx.clearRect(
+
+        0,
+        0,
+
+        width,
+        height
+
+    );
+
+
+    for (
+
+        let i = 0;
+
+        i < particles.length;
+
+        i++
+
+    ) {
+
+        const p =
+            particles[i];
+
+
+        ctx.fillStyle =
+            `rgb(
+                ${Math.round(p.r)},
+                ${Math.round(p.g)},
+                ${Math.round(p.b)}
+            )`;
+
+
+        ctx.fillRect(
+
+            p.x,
+
+            p.y,
+
+            p.size,
+
+            p.size
+
+        );
+
+    }
+
+
+    /*
+        Small pause before
+        showing the actual photo.
+    */
+
+    setTimeout(
+
+        revealPhoto,
+
+        700
+
+    );
+
+}
+
+
+
+function revealPhoto() {
+
+    /*
+        ONLY fade.
+
+        No movement.
+        No zoom.
+        No resizing.
+    */
+
+    finalImage.style.opacity =
+        "1";
+
+}
+
+</script>
+
+</body>
+</html>
